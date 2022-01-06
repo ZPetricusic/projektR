@@ -1,3 +1,4 @@
 *.env
 *.csv
 .vscode
+main/__pycache__/*

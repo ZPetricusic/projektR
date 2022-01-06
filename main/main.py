@@ -1,76 +1,110 @@
 import sys
-import validators
 import asyncio
+import socket
 from gsb import *
+from ioc import *
 from auxiliaries import *
-from urllib.parse import urlparse
+
 
 async def main():
 
-    # Read in the crawler file
-    try:
-        data_file = sys.argv[1]
-    except:
-        print("[!] Error: No crawler URLs provided", file=sys.stderr)
-        print("[!] Usage: python main.py <crawler filename>", file=sys.stderr)
-        sys.exit(1)
+	data_file, blacklist_file = loadFiles()
 
-    # only allow .csv or .txt files
-    allowed_formats = ("csv", "txt")
+	final_scores = {
+		"results" : []
+	}
 
-    if not data_file.endswith(allowed_formats):
-        print("[!] Error: The provided URL file has to be in .txt or .csv format!", file=sys.stderr)
-        print("[!] Usage: python main.py <crawler filename>", file=sys.stderr)
-        sys.exit(1)
+	# starting stage 1
+	printBanner("STAGE 1 - Filtering and formatting the crawler data")
 
-    # set of urls in order to remove all duplicates
-    url_set = set()
+	try:
+		# build the wanted JSON output
+		final_scores["results"] = buildFinalJSON(data_file) 
+	except Exception as e:
+		print(e)
+		sys.exit(1)
 
-    # starting stage 1
-    printBanner("STAGE 1 - REMOVING DUPLICATE URLS FROM CRAWLER DATA")
+	# starting stage 2
+	printBanner("STAGE 2 - Analyzing the dataset")
 
-    try:
-        with open(data_file) as urls:
-            for url in urls:
-                # remove the newline at the end
-                url = url.strip()
-                # skip any possible lines which are not URL strings
-                if validators.url(url):
-                    url_set.add(url)
-                else:
-                    print(f"[-] Skipping URL {url}")
+	printBanner("STAGE 2.1 - Google Safe Browsing Analysis")
 
-            print("\n[✓] Successfully filtered URLs")
-            print(f"[✓] The set now contains {len(url_set)} domains")
+	# intermediary scores
+	GSB_malicious_endpoints = []
 
-    except Exception as e:
-        print(e)
-        sys.exit(1)
+	# perform a chunkified GSB analysis for every endpoint
+	# of every domain
+	for domain in final_scores["results"].keys(): 
+		# chunkify the endpoints for this domain 
+		# into lists of gsb.CHUNKS
+		url_chunks = []
+		current_chunk = []
 
-    # starting stage 2
-    printBanner("STAGE 2 - ANALYZING URL SET")
+		# add every endpoint to the chunks
+		endpoint_data_list = final_scores["results"][domain]["endpoint_data"]
+		for idx, endpoint in enumerate(endpoint_data_list):
+			# e.g. www.fer.unizg.hr : [/login?secerror, ...]
+			current_chunk.append(f"{list(endpoint.keys())[0]}")
+			# go until we reach the max chunk size or the end of the list
+			if len(current_chunk) >= CHUNKS or idx + 1 == len(endpoint_data_list):
+				url_chunks.append({domain : current_chunk.copy()}) # send a copy for pass-by-ref reasons
+				# reset the chunk
+				current_chunk.clear()
+				current_chunk = []
 
-    # chunkify the URL set into lists of gsb.CHUNKS
-    # converting to list since set is not subscriptable
-    # source: https://stackoverflow.com/questions/434287/what-is-the-most-pythonic-way-to-iterate-over-a-list-in-chunks
-    url_chunks = (list(url_set)[pos:pos + CHUNKS] for pos in range(0, len(url_set), CHUNKS))
+		# after filtering the crawler data use the in-memory set to run the tests
+		for url_chunk in url_chunks:
+			# start with GSB checks
+			data = createGSBRequestFromTemplate(url_chunk)
+			try:
+				GSB_malicious_endpoints = await GSBanalyse(
+				    data, domain
+				)	
+			except Exception as e:
+				print(e)
+				sys.exit(1)
+		
+		# update the final JSON with GSB results
+		for endpoint in endpoint_data_list:
+			endpoint_from_key = list(endpoint.keys())[0]
+			# update the first key, the endpoint
+			endpoint[endpoint_from_key].update({"scores" : {
+				# 1 if malicious, 0 otherwise
+				"GSB_SCORE" : GSB_SCORE_POSITIVE if endpoint_from_key in GSB_malicious_endpoints else GSB_SCORE_NEGATIVE
+			}})
 
-    # final results will be displayed as a dictionary:
-    # {url : {gsb_score: x, vt_score..., total_score: formula}, ..}
+	print("\n[✓] Successfully analysed URLs using Google Safe Browsing")
 
-    final_scores = {}
+	# check the filtered IP addresses with the blacklist.txt for well-known IOCs
+	printBanner("STAGE 2.2 - Comparing IP addresses with local IP blacklist")
 
-    # after filtering the crawler data use the in-memory set to run the tests
+	# get all the IP addresses for each domain
+	for domain in final_scores["results"].keys():
+		# all the IPs for each domain
+		ip_data_list = []
+		[ip_data_list.append(list(x.keys())[0]) for x in final_scores["results"][domain]["ip_data"]]
 
-    # start with GSB checks
-    for url_chunk in url_chunks:
-        data = createGSBRequestFromTemplate(url_chunk)
-        await GSBanalyse(data, final_scores)
-        
-    print(final_scores)
-        
+		IOC_malicious_IPs = []
+		try:
+			# compare to local blacklist file for well-known IOCs
+			IOC_malicious_IPs = IOCanalyse(ip_data_list, blacklist_file)
+		except Exception as e:
+			print(e)
+			sys.exit(1)
 
 
-if __name__ == '__main__':
-   asyncio.run(main()) 
+	# update the final JSON with IOC results
+		for ip in final_scores["results"][domain]["ip_data"]:
+			# update the IP
+			ip_from_key = list(ip.keys())[0]
+			ip[ip_from_key].update({"scores" : {
+				# 1 if malicious, 0 otherwise
+				"IOC_SCORE" : IOC_SCORE_POSITIVE if ip_from_key in IOC_malicious_IPs else IOC_SCORE_NEGATIVE
+			}})
 
+	print(final_scores)
+
+	print("\n[✓] Successfully compared IP list with well-known IOCs")
+	
+if __name__ == "__main__":
+	asyncio.run(main())
