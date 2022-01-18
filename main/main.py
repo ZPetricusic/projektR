@@ -3,6 +3,7 @@ import asyncio
 import socket
 from gsb import *
 from ioc import *
+from shodan_io import *
 from auxiliaries import *
 
 
@@ -102,9 +103,24 @@ async def main():
 				"IOC_SCORE" : IOC_SCORE_POSITIVE if ip_from_key in IOC_malicious_IPs else IOC_SCORE_NEGATIVE
 			}})
 
-	print(final_scores)
-
 	print("\n[✓] Successfully compared IP list with well-known IOCs")
 	
+	printBanner("STAGE 2.3 - Analysing IP addresses using Shodan")
+
+	for domain in final_scores["results"].keys():
+		# send each IP to Shodan
+		for ip in final_scores["results"][domain]["ip_data"]:
+			try:
+				ip[list(ip.keys())[0]]["scores"].update(ShodanAnalyse(ip))
+			except Exception as e:
+				print(e)
+			# print(final_scores["results"][domain]["ip_data"])
+			# final_scores["results"][domain]["ip_data"][list(ip.keys())[0]]["scores"].update(ShodanAnalyse(ip))
+
+	print("\n[✓] Successfully analysed IP addresses using Shodan")
+
+	with open("analysis.json", "w") as out_file:
+		out_file.write(json.dumps(final_scores))
+
 if __name__ == "__main__":
 	asyncio.run(main())

@@ -13,8 +13,8 @@ GSB_API_DELAY = os.getenv("GSB_API_DELAY")
 CLIENT_ID = os.getenv("GSB_CLIENT_ID")
 CLIENT_VERSION = os.getenv("GSB_CLIENT_VERSION")
 CHUNKS = 500  # max number of URLs sent for analysis at a time
-GSB_SCORE_POSITIVE = 1  # since the GSB verdict can only be true or false
-GSB_SCORE_NEGATIVE = 0  # the score can only be 1 or 0 for GSB
+GSB_SCORE_POSITIVE = 'MALICIOUS'  # since the GSB verdict can only be true or false
+GSB_SCORE_NEGATIVE = 'SAFE'  # the score can only be 1 or 0 for GSB
 
 
 def createGSBRequestFromTemplate(url_chunk):
@@ -56,7 +56,7 @@ async def GSBanalyse(data, domain):
 	print(
 		f"[*] Sleeping for {GSB_API_DELAY} seconds due to the obligatory API delay for this plan.."
 	)
-	time.sleep(int(GSB_API_DELAY))
+	#time.sleep(int(GSB_API_DELAY))
 
 	print(
 		f"[*] Querying {len(data['threatInfo']['threatEntries'])} URL{f's' if len(data['threatInfo']['threatEntries']) > 1 else ''} for domain '{domain}'"

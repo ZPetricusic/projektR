@@ -1,7 +1,7 @@
 import ipaddress
 
-IOC_SCORE_POSITIVE = 1
-IOC_SCORE_NEGATIVE = 0
+IOC_SCORE_POSITIVE = 'MALICIOUS'
+IOC_SCORE_NEGATIVE = 'SAFE'
 
 def IOCanalyse(ip_data_list, blacklist_file):
     IOC_malicious_IPs = []

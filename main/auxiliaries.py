@@ -133,4 +133,3 @@ def buildFinalJSON(data_file):
         print(f"[✓] The list now contains {endpoint_counter} endpoints and {domain_counter} domains")
 
         return domain_dict
-
