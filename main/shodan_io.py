@@ -13,20 +13,25 @@ SHODAN_LOW_VULN = 1
 SHODAN_VULN_COEFFICIENT = 0.9
 SHODAN_RISKY_PORT_COEFFICIENT = 0.1
 
-
 # load .env file
 load_dotenv()
-
-# initialize the API
-API_KEY = os.getenv('SHODAN_API')
-api = Shodan(API_KEY)
-
 # delay
 SHODAN_API_DELAY = int(os.getenv("SHODAN_API_DELAY"))
+# initialize the API
+API_KEY = os.getenv('SHODAN_API')
+
+api = Shodan(API_KEY)
+
 
 def ShodanAnalyse(ip):
+    print(
+		f"[*] Sleeping for {SHODAN_API_DELAY} seconds due to the obligatory API delay for this plan.."
+	)
+
     # sleep to adjust to the request limiter
     time.sleep(SHODAN_API_DELAY)
+
+    print(f"[*] Querying Shodan for info on {ip}")
 
     # get the info
     results = api.host(ip)
@@ -63,8 +68,8 @@ def ShodanAnalyse(ip):
                 cvss_total += float(data["vulns"][vuln]["cvss"])
     
     shodan_score["shodan_score"].update({"last_update" : results["last_update"] if "last_update" in results else "N/A"})
-    shodan_score["shodan_score"].update({"OS" : results["os"] if "os" in results else "N/A"})
-    shodan_score["shodan_score"].update({"verdict" : calculateResultForEndpoint(cve_count, cvss_total, risky_opened)})
+    shodan_score["shodan_score"].update({"os" : results["os"] if "os" in results else "N/A"})
+    shodan_score["shodan_score"].update({"verdict" : calculateResultForEndpoint(cve_count, cvss_total, len(risky_opened))})
 
     return shodan_score
     
@@ -78,9 +83,9 @@ def checkRiskyPorts(port_list):
             tmp.append(port)
     return tmp
 
-def calculateResultForEndpoint(cve_count, cvss_total, risky_opened):
+def calculateResultForEndpoint(cve_count, cvss_total, risky_num):
     # Formula, as derived on Desmos via trial and error
     # (arctan(cvss_total * cvss_total * cve_count) / cvss_total * cvss_total + 27) / (PI/2)
     # + 27 is an arbitrary offset used to flatten the curve, subject to change
     # get only 1 decimal spot
-    return 0.0 if cve_count == 0 else int((atan((cvss_total * cvss_total * cve_count) / (cvss_total * cvss_total + 27) )) / (pi/2) * 1000) / 10
+    return int((atan((cvss_total * cvss_total * (SHODAN_VULN_COEFFICIENT * cve_count + SHODAN_RISKY_PORT_COEFFICIENT * risky_num)) / (cvss_total * cvss_total + 27) )) / (pi/2) * 1000) / 10

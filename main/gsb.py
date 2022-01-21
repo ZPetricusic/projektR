@@ -56,7 +56,7 @@ async def GSBanalyse(data, domain):
 	print(
 		f"[*] Sleeping for {GSB_API_DELAY} seconds due to the obligatory API delay for this plan.."
 	)
-	#time.sleep(int(GSB_API_DELAY))
+	time.sleep(int(GSB_API_DELAY))
 
 	print(
 		f"[*] Querying {len(data['threatInfo']['threatEntries'])} URL{f's' if len(data['threatInfo']['threatEntries']) > 1 else ''} for domain '{domain}'"

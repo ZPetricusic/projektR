@@ -4,6 +4,8 @@ import socket
 from gsb import *
 from ioc import *
 from shodan_io import *
+from abuseipdb import *
+from metadefender import *
 from auxiliaries import *
 
 
@@ -24,6 +26,8 @@ async def main():
 	except Exception as e:
 		print(e)
 		sys.exit(1)
+
+	printBanner("END STAGE 1")
 
 	# starting stage 2
 	printBanner("STAGE 2 - Analyzing the dataset")
@@ -80,21 +84,24 @@ async def main():
 	printBanner("STAGE 2.2 - Comparing IP addresses with local IP blacklist")
 
 	# get all the IP addresses for each domain
+	ip_data_list = []
 	for domain in final_scores["results"].keys():
 		# all the IPs for each domain
-		ip_data_list = []
 		[ip_data_list.append(list(x.keys())[0]) for x in final_scores["results"][domain]["ip_data"]]
-
-		IOC_malicious_IPs = []
-		try:
-			# compare to local blacklist file for well-known IOCs
-			IOC_malicious_IPs = IOCanalyse(ip_data_list, blacklist_file)
-		except Exception as e:
-			print(e)
-			sys.exit(1)
-
+	
+	# remove duplicates
+	ip_data_list = list(set(ip_data_list))
+	
+	IOC_malicious_IPs = []
+	try:
+		# compare to local blacklist file for well-known IOCs
+		IOC_malicious_IPs = IOCanalyse(ip_data_list, blacklist_file)
+	except Exception as e:
+		print(e)
+		sys.exit(1)
 
 	# update the final JSON with IOC results
+	for domain in final_scores["results"].keys():
 		for ip in final_scores["results"][domain]["ip_data"]:
 			# update the IP
 			ip_from_key = list(ip.keys())[0]
@@ -110,17 +117,54 @@ async def main():
 	for domain in final_scores["results"].keys():
 		# send each IP to Shodan
 		for ip in final_scores["results"][domain]["ip_data"]:
+			ip_from_key = list(ip.keys())[0]
 			try:
-				ip[list(ip.keys())[0]]["scores"].update(ShodanAnalyse(ip))
+				ip[ip_from_key]["scores"].update(ShodanAnalyse(ip_from_key))
 			except Exception as e:
 				print(e)
-			# print(final_scores["results"][domain]["ip_data"])
-			# final_scores["results"][domain]["ip_data"][list(ip.keys())[0]]["scores"].update(ShodanAnalyse(ip))
+				ip[ip_from_key]["scores"].update({"shodan_score" : {}})
 
 	print("\n[✓] Successfully analysed IP addresses using Shodan")
 
+	printBanner("STAGE 2.4 - Comparing with a dynamic IOC list via Metadefender")
+	
+	try:
+		meta_results = MetadefenderBulkAnalyse(ip_data_list)
+	except Exception as e:
+		print(e)
+
+	for domain in final_scores["results"].keys():
+		for ip in final_scores["results"][domain]["ip_data"]:
+			ip_from_key = list(ip.keys())[0]
+			if ip_from_key in list(meta_results.keys()):
+				ip[ip_from_key].update(meta_results[ip_from_key])
+			else:
+				ip[ip_from_key].update({"Metadefender_detections" : "N/A"})
+
+	print("\n[✓] Successfully compared IP addresses with a dynamic IOC list on Metadefender")
+
+	printBanner("STAGE 2.5 - Collecting user data from AbuseIPDB")
+
+	for domain in final_scores["results"].keys():
+		# send each IP to Abuse
+		for ip in final_scores["results"][domain]["ip_data"]:
+			ip_from_key = list(ip.keys())[0]
+			try:
+				ip[ip_from_key]["scores"].update(AbuseAnalyse(ip_from_key))
+			except Exception as e:
+				print(e)
+				ip[ip_from_key]["scores"].update({"AbuseIPDB_score" : {}})
+
+	print("\n[✓] Successfully collected user data using AbuseIPDB")
+
+	printBanner("END STAGE 2")
+
+	printBanner("STAGE 3 - Writing to output file [analysis.json]")
+
 	with open("analysis.json", "w") as out_file:
-		out_file.write(json.dumps(final_scores))
+		out_file.write(json.dumps(final_scores, sort_keys=True, indent=4))
+
+	printBanner("END STAGE 3")
 
 if __name__ == "__main__":
 	asyncio.run(main())
