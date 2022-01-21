@@ -137,9 +137,9 @@ async def main():
 		for ip in final_scores["results"][domain]["ip_data"]:
 			ip_from_key = list(ip.keys())[0]
 			if ip_from_key in list(meta_results.keys()):
-				ip[ip_from_key].update(meta_results[ip_from_key])
+				ip[ip_from_key]["scores"].update(meta_results[ip_from_key])
 			else:
-				ip[ip_from_key].update({"Metadefender_detections" : "N/A"})
+				ip[ip_from_key]["scores"].update({"Metadefender_detections" : "N/A"})
 
 	print("\n[✓] Successfully compared IP addresses with a dynamic IOC list on Metadefender")
 
